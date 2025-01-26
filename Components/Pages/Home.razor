@@ -1,0 +1,281 @@
+﻿@page "/"
+@using System.ComponentModel.DataAnnotations
+@using System.Net
+@using System.Text
+@using System.Text.Json.Serialization
+@using System.Text.Json
+@using ImageHunter.Services
+@using Qdrant.Client
+@using Qdrant.Client.Grpc
+@using System.Net.Http.Headers
+
+@inject IHttpClientFactory httpClientFactory
+@inject IWebHostEnvironment env
+@inject ISnackbar Snackbar
+@inject IVisionService visionService
+@inject IVectorDatabaseService vectorDbService
+
+<PageTitle>Home</PageTitle>
+<MudGrid class="mb-12">
+    <MudItem xs="6">
+        <MudCard>
+            <MudCardContent>
+                <MudText><p>Enter a prompt to search your images! The search is AI powered, so just enter whatever natural language text describes what you're looking for.</p></MudText>
+            </MudCardContent>
+        </MudCard>
+        <EditForm Model="@model" OnValidSubmit="SearchImages">
+            <DataAnnotationsValidator />
+            <MudCard>
+                <MudCardContent>
+                    <MudGrid>
+                        <MudItem xs="6">
+                            <MudTextField Label="Search" @bind-Value="model.SearchPrompt" For="@(() => model.SearchPrompt)"/>
+                        </MudItem>
+                        <MudItem xs="3">
+                            <MudSelect T="int" @bind-Value="model.ResultLimit" Label="Result limit" Placeholder="Result limit">
+                                @for (int i = 5; i <= 25; i+=5)
+                                {
+                                    var z = i; // Quirk with MudBlazor, need to separate iterator from displayed value
+                                    <MudSelectItem T="int" Value="@i">@z</MudSelectItem>
+
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="3">
+                            <MudSelect T="double" @bind-Value="model.ConfidenceThreshold" Label="Confidence Threshold" Placeholder="Confidence Threshold">
+                                @foreach(var threshold in confidenceThresholds)
+                                {
+                                    <MudSelectItem T="double" Value="@threshold.Value">@threshold.Label</MudSelectItem>
+
+                                }
+                            </MudSelect>
+                        </MudItem>
+                    </MudGrid>
+                    <br />
+                    <div style="float: right">
+                        <MudButton ButtonType="ButtonType.Button" OnClick="ResetUI" Variant="Variant.Filled" Color="Color.Primary" Class="ml-auto mr-5">Reset</MudButton>
+                        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Class="ml-auto">Search</MudButton>
+                    </div>
+                </MudCardContent>
+            </MudCard>
+        </EditForm>
+    </MudItem>
+    <MudItem xs="6">
+        <MudStack Style="width: 100%">
+            <MudFileUpload T="IReadOnlyList<IBrowserFile>"
+            @ref="@_fileUpload"
+            OnFilesChanged="OnInputFileChanged"
+            AppendMultipleFiles
+            Hidden="@false"
+            InputClass="absolute mud-width-full mud-height-full overflow-hidden z-10"
+            InputStyle="opacity:0"
+            tabindex="-1"
+            @ondrop="@ClearDragClass"
+            @ondragenter="@SetDragClass"
+            @ondragleave="@ClearDragClass"
+            @ondragend="@ClearDragClass">
+                <ActivatorContent>
+                    <MudPaper Height="150px" Outlined="true" Class="@_dragClass">
+                        <MudText Typo="Typo.h6">Drag and drop files here or click</MudText>
+                        @foreach (var file in _fileNames)
+                        {
+                            <MudChip T="string" Color="Color.Dark" Text="@file" tabindex="-1" />
+                        }
+                    </MudPaper>
+                </ActivatorContent>
+            </MudFileUpload>
+            @if(!isUploading)
+            {
+                <MudToolBar Gutters="@false"
+                Class="relative d-flex justify-end gap-4">
+                    <MudButton Color="Color.Primary" OnClick="@OpenFilePickerAsync" Variant="Variant.Filled">Open file picker</MudButton>
+                    <MudButton Color="Color.Primary" Disabled="@(!_fileNames.Any())" OnClick="@Upload" Variant="Variant.Filled">Upload</MudButton>
+                    <MudButton Color="Color.Error" Disabled="@(!_fileNames.Any())" OnClick="@ClearAsync" Variant="Variant.Filled">Clear</MudButton>
+                </MudToolBar>
+            } else
+            {
+                <MudText>Working on that super quick...</MudText><MudProgressCircular Color="Color.Default" Indeterminate="true" />
+            }
+        </MudStack>
+    </MudItem>
+</MudGrid>
+
+<MudGrid>
+    @if(!isSearching){
+        @if(!string.IsNullOrEmpty(model.SearchPrompt) && images.Count == 0){
+            <MudItem xs="12">
+                <MudText Typo="Typo.h3">No relevant results.</MudText>
+            </MudItem>
+        }
+        else 
+        {
+            @foreach (var image in images)
+            {
+                <MudItem xs="3" Style="max-height: 250px; overflow: hidden">
+                    <MudImage ObjectFit="ObjectFit.Cover" Fluid="true"Src="@image.ImagePath" Elevation="25" Class="rounded-lg"/>
+                </MudItem>
+            }
+        }
+    }
+    else 
+    {
+        <MudItem xs="12">
+            <MudText>Working on that super quick...</MudText><MudProgressCircular Color="Color.Default" Indeterminate="true" />
+        </MudItem>
+    }
+</MudGrid>
+
+@code 
+{
+    // UI stuff
+    private long maxFileSize = 10240000;
+    bool isUploading = false;
+    bool isSearching = false;
+    private const string DefaultDragClass = "relative rounded-lg border-2 border-dashed pa-4 mud-width-full mud-height-full";
+    private string _dragClass = DefaultDragClass;
+
+    // Search and upload models and data
+    SearchForm model = new SearchForm() { ResultLimit = 10, ConfidenceThreshold = 0.355 };
+    HttpClient client { get; set; }
+    private readonly List<string> _fileNames = new();
+    private MudFileUpload<IReadOnlyList<IBrowserFile>>? _fileUpload;
+    IReadOnlyList<IBrowserFile> ImageUploads { get; set; }
+
+    public List<ConfidenceThresholds> confidenceThresholds = new() {
+        new ConfidenceThresholds() { Label = "High", Value = 0.355 },
+        new ConfidenceThresholds() { Label = "Medium", Value = 0.335 },
+        new ConfidenceThresholds() { Label = "low", Value = 0.30 }
+    };
+
+    public List<VectorizedImage> images = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Initial setup - make sure db exists, get httpclient instance, get images that were previously uploaded
+        await vectorDbService.TryCreateDb();
+        client = httpClientFactory.CreateClient("vision");
+        images = await vectorDbService.GetAllImages();
+
+        await base.OnInitializedAsync();
+    }
+
+    private async Task SearchImages(EditContext context)
+    {
+        // Clear out existing image lists on search
+        isSearching = true;
+        images = new();
+
+        // Show all results if search prompt is empty
+        if (string.IsNullOrEmpty(model.SearchPrompt))
+        {
+            images = await vectorDbService.GetAllImages();
+        } 
+        else {
+            // Vectorize the user search prompt
+            var vectorizedText = await visionService.Vectorize(model.SearchPrompt);
+
+            // Run a vector search using the search prompt embedding
+            var searchedImages = await vectorDbService.SearchImages(vectorizedText.vector, Convert.ToUInt64(model.ResultLimit));
+
+            images = searchedImages.Where(x => x.Score > model.ConfidenceThreshold)
+                .Select(y => new VectorizedImage() 
+                { 
+                    FileName = y.Payload["name"].StringValue,
+                    ImagePath = $"/images/{y.Payload["name"].StringValue}"
+                }).ToList();
+        }
+
+        isSearching = false;
+    }
+
+    private async Task Upload()
+    {
+        // Clear UI lists and status
+        await ResetUI();
+
+        isUploading = true;
+        try
+        {
+            var vectorizedImages = new List<VectorizedImage>();
+
+            foreach(var file in ImageUploads)
+            {
+                // Construct wwwroot folder path and save uploaded image there so it can be retrieved from the UI
+                string safeFileName = WebUtility.HtmlEncode(file.Name);
+                var path = Path.Combine(env.WebRootPath, "images", safeFileName);
+                await using FileStream fs = new(path, FileMode.Create);
+                await file.OpenReadStream(maxFileSize).CopyToAsync(fs);
+
+                // Get a vector for each image from Azure Vision
+                await using MemoryStream ms = new();
+                await file.OpenReadStream(maxFileSize).CopyToAsync(ms);
+                var vectorResponse = await visionService.Vectorize(file.Name, ms.ToArray());
+                vectorizedImages.Add(new VectorizedImage() { Vectors = vectorResponse.vector, FileName = file.Name });
+            }
+
+            // Save image vectors to db
+            await vectorDbService.SaveImagestoDb(vectorizedImages);
+
+            Snackbar.Configuration.PositionClass = Defaults.Classes.Position.TopRight;
+            Snackbar.Add("File uploaded!", Severity.Success);
+        }
+        catch (Exception e)
+        {
+            Snackbar.Configuration.PositionClass = Defaults.Classes.Position.TopRight;
+            Snackbar.Add("File uploaded!", Severity.Warning);
+        }
+        finally
+        {
+            isUploading = false;
+        }
+
+        await ClearAsync();
+        images = await vectorDbService.GetAllImages();
+    }
+
+    #region UIHelpers
+    private async Task ClearAsync()
+    {
+        await (_fileUpload?.ClearAsync() ?? Task.CompletedTask);
+        _fileNames.Clear();
+        ClearDragClass();
+    }
+
+    private Task OpenFilePickerAsync()
+        => _fileUpload?.OpenFilePickerAsync() ?? Task.CompletedTask;
+
+    private void OnInputFileChanged(InputFileChangeEventArgs e)
+    {
+        ClearDragClass();
+        ImageUploads = e.GetMultipleFiles();
+        foreach (var file in ImageUploads)
+        {
+            _fileNames.Add(file.Name);
+        }
+    }
+
+    private void SetDragClass()
+        => _dragClass = $"{DefaultDragClass} mud-border-primary";
+
+    private void ClearDragClass()
+        => _dragClass = DefaultDragClass;
+
+    private async Task ResetUI()
+    {
+        model = new();
+        images = await vectorDbService.GetAllImages();
+    }
+
+    public class SearchForm
+    {
+        public string SearchPrompt { get; set; }
+        public int ResultLimit { get; set; }
+        public double ConfidenceThreshold { get; set; }
+    }
+
+    public class ConfidenceThresholds {
+        public string Label { get; set; }
+        public double Value { get; set; }
+    }
+        #endregion
+}
