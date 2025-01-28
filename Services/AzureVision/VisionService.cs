@@ -12,7 +12,7 @@ namespace ImageHunter.Services
             client = clientFactory.CreateClient("vision");
         }
 
-        public async Task<VectorizedResponse> Vectorize(string prompt)
+        public async Task<VectorizedResponse> VectorizeText(string prompt)
         {
             HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, "/computervision/retrieval:vectorizeText?api-version=2024-02-01&model-version=2023-04-15");
             request.Content = new StringContent(JsonSerializer.Serialize(new { text = prompt }), Encoding.UTF8, "application/json");
@@ -23,7 +23,7 @@ namespace ImageHunter.Services
             return JsonSerializer.Deserialize<VectorizedResponse>(responseString);
         }
 
-        public async Task<VectorizedResponse> Vectorize(string imageName, byte[] imageBytes)
+        public async Task<VectorizedResponse> VectorizeImage(byte[] imageBytes)
         {
             HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, "/computervision/retrieval:vectorizeImage?api-version=2024-02-01&model-version=2023-04-15");
             var binaryContent = new ByteArrayContent(imageBytes);

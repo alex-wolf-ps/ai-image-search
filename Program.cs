@@ -10,7 +10,7 @@ builder.Services.AddMudServices();
 
 builder.Services.AddHttpClient("vision", options =>
 {
-    options.BaseAddress = new Uri("https://wolfpro.cognitiveservices.azure.com/");
+    options.BaseAddress = new Uri("your-azure-vision-endpoint");
     options.DefaultRequestHeaders.Add("Ocp-Apim-Subscription-Key", "");
 });
 

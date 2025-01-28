@@ -12,9 +12,4 @@
     <PackageReference Include="MudBlazor" Version="8.*" />
 	  <PackageReference Include="Qdrant.Client" Version="1.12.0" />
   </ItemGroup>
-
-
-  <ItemGroup>
-    <Folder Include="wwwroot\images\" />
-  </ItemGroup>
 </Project>
