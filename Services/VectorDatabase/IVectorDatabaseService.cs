@@ -5,7 +5,7 @@ namespace ImageHunter.Services
     public interface IVectorDatabaseService
     {
         Task SaveImagestoDb(List<VectorizedImage> images);
-        Task<IReadOnlyList<ScoredPoint>> SearchImages(float[] vector, ulong limit);
+        Task<List<VectorizedImage>> SearchImages(float[] vector, int limit);
         Task TryCreateDb();
         Task<List<VectorizedImage>> GetAllImages();
     }

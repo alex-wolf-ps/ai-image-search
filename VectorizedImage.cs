@@ -6,5 +6,6 @@
         public float[] Vectors { get; set; }
         public string Tags { get; set; }
         public string ImagePath { get; set; }
+        public float Score { get; set;}
     }
 }

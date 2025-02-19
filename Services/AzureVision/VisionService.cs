@@ -15,7 +15,8 @@ namespace ImageHunter.Services
         public async Task<VectorizedResponse> VectorizeText(string prompt)
         {
             HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, "/computervision/retrieval:vectorizeText?api-version=2024-02-01&model-version=2023-04-15");
-            request.Content = new StringContent(JsonSerializer.Serialize(new { text = prompt }), Encoding.UTF8, "application/json");
+            request.Content = new StringContent(
+                JsonSerializer.Serialize(new { text = prompt }), Encoding.UTF8, "application/json");
 
             var response = await client.SendAsync(request);
 

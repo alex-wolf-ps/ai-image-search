@@ -134,12 +134,20 @@
     HttpClient client { get; set; }
 
     // Search model and data
-    SearchForm model = new SearchForm() { ResultLimit = 10, ConfidenceThreshold = 0.355 };
+    @* SearchForm model = new SearchForm() { ResultLimit = 10, ConfidenceThreshold = 0.355 };
     private List<KeyValuePair<string, double>> confidenceThresholds = new()
     {
         new("High", 0.355),
         new("Medium", 0.335),
         new("Low", 0.30)
+    }; *@
+
+    SearchForm model = new SearchForm() { ResultLimit = 10, ConfidenceThreshold = .625 };
+    private List<KeyValuePair<string, double>> confidenceThresholds = new()
+    {
+        new("High", .64),
+        new("Medium", .66),
+        new("Low", .68)
     };
     private List<VectorizedImage> images = new();
 
@@ -167,7 +175,6 @@
 
     private async Task Upload()
     {
-        // Clear UI lists and status
         isUploading = true;
         try
         {
@@ -223,13 +230,13 @@
             var vectorizedText = await visionService.VectorizeText(model.SearchPrompt);
 
             // Run a vector search using the search prompt embedding
-            var searchedImages = await vectorDbService.SearchImages(vectorizedText.vector, Convert.ToUInt64(model.ResultLimit));
+            var searchedImages = await vectorDbService.SearchImages(vectorizedText.vector, model.ResultLimit);
 
-            images = searchedImages.Where(x => x.Score > model.ConfidenceThreshold)
+            images = searchedImages.Where(x => x.Score < model.ConfidenceThreshold)
                 .Select(y => new VectorizedImage() 
                 { 
-                    FileName = y.Payload["name"].StringValue,
-                    ImagePath = $"/images/{y.Payload["name"].StringValue}"
+                    FileName = y.FileName,
+                    ImagePath = $"/images/{y.FileName}"
                 }).ToList();
         }
 

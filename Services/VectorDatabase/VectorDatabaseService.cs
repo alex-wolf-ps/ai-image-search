@@ -1,66 +1,79 @@
-﻿using Qdrant.Client;
+﻿using ChromaDB.Client;
+using MudBlazor;
+using MudBlazor.Extensions;
+using Qdrant.Client;
 using Qdrant.Client.Grpc;
 using System.ComponentModel;
 
 namespace ImageHunter.Services.VectorDatabase
 {
-    public class VectorDatabaseService(IWebHostEnvironment env) : IVectorDatabaseService
+    public class VectorDatabaseService(IWebHostEnvironment env, ChromaClient chromaClient, ChromaCollectionClient chromaCollection) : IVectorDatabaseService
     {
         QdrantClient qClient = new QdrantClient("localhost");
 
         public async Task SaveImagestoDb(List<VectorizedImage> images)
         {
-            var qdrantRecords = new List<PointStruct>();
+            List<string> imageIds = new();
+            List<ReadOnlyMemory<float>> imageVectors = new();
+            List<Dictionary<string,object>> imageMetadata = new();
 
             foreach (var image in images)
             {
-                qdrantRecords.Add(new PointStruct()
-                {
-                    Id = new PointId((uint)new Random().Next(0, 10000000)),
-                    Vectors = image.Vectors,
-                    Payload =
-                    {
-                        ["name"] = image.FileName
-                    }
-                });
+                imageIds.Add(new Random().Next().ToString());
+                imageVectors.Add(image.Vectors);
+                imageMetadata.Add(new Dictionary<string, object> { ["Name"] = image.FileName });
             }
 
-            await qClient.UpsertAsync("images", qdrantRecords);
+            await chromaCollection.Add(imageIds, imageVectors, imageMetadata);
         }
 
         public async Task<List<VectorizedImage>> GetAllImages()
         {
-            var results = await qClient.QueryAsync(
-                collectionName: "images",
-                limit: 100
-            );
-
             List<VectorizedImage> images = new();
+
+            var collection = await chromaCollection.Get();
 
             //var fileNames = Directory.GetFiles(env.WebRootPath + "\\images").ToList();
 
-            foreach (var image in results)
+            foreach (var item in collection)
             {
-                images.Add(new VectorizedImage() { ImagePath = $"/images/{image.Payload["name"].StringValue}" });
+                images.Add(new VectorizedImage() { ImagePath = $"/images/{item.Metadata["Name"]}" });
             }
 
             return images;
         }
 
-        public async Task<IReadOnlyList<ScoredPoint>> SearchImages(float[] vector, ulong limit)
+        public async Task<List<VectorizedImage>> SearchImages(float[] vector, int limit)
         {
-            return await qClient.QueryAsync(
-                collectionName: "images",
-                query: vector,
-                limit: limit
-            );
+            List<ReadOnlyMemory<float>> imageVectors = [
+                vector
+            ];
+
+            var queryResults = await chromaCollection.Query(
+                queryEmbeddings: imageVectors,
+                limit,
+                include: ChromaQueryInclude.Metadatas | ChromaQueryInclude.Distances | ChromaQueryInclude.Embeddings);
+
+            List<VectorizedImage> images = new();
+
+            //var fileNames = Directory.GetFiles(env.WebRootPath + "\\images").ToList();
+
+            foreach (var result in queryResults)
+            {
+                foreach(var item in result)
+                {
+                    images.Add(new VectorizedImage() { Score = item.Distance, FileName = item.Metadata["Name"].ToString(), ImagePath = $"/images/{item.Metadata["Name"]}" });
+                }
+            }
+
+            return images.OrderByDescending(x => x.Score).ToList();
         }
 
         public async Task TryCreateDb()
         {
             try
             {
-                await qClient.CreateCollectionAsync("images", new VectorParams { Size = 1024, Distance = Distance.Cosine });
+                await chromaClient.GetOrCreateCollection("images");
             }
             catch (Exception e)
             {
