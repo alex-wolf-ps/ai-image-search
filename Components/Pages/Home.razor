@@ -142,12 +142,12 @@
         new("Low", 0.30)
     }; *@
 
-    SearchForm model = new SearchForm() { ResultLimit = 10, ConfidenceThreshold = .625 };
+    SearchForm model = new SearchForm() { ResultLimit = 10, ConfidenceThreshold = .675 };
     private List<KeyValuePair<string, double>> confidenceThresholds = new()
     {
-        new("High", .64),
-        new("Medium", .66),
-        new("Low", .68)
+        new("High", .65),
+        new("Medium", .675),
+        new("Low", .7)
     };
     private List<VectorizedImage> images = new();
 

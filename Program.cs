@@ -16,20 +16,8 @@ builder.Services.AddHttpClient("vision", options =>
 });
 
 builder.Services.AddScoped<IVisionService, VisionService>();
-builder.Services.AddScoped<IVectorDatabaseService, VectorDatabaseService>();
+builder.Services.AddScoped<IVectorDatabaseService, AzureVectorDatabaseService>();
 
-var configOptions = new ChromaConfigurationOptions(uri: "http://localhost:8000/api/v1/");
-using var httpClient = new HttpClient();
-var chroma = new ChromaClient(configOptions, httpClient);
-
-var collection = await chroma.GetOrCreateCollection("images", metadata: new Dictionary<string, object>
-{
-    { "hnsw:space", "cosine" }
-});
-var chromaCollection = new ChromaCollectionClient(collection, configOptions, httpClient);
-
-builder.Services.AddSingleton(chroma);
-builder.Services.AddSingleton(chromaCollection);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()

@@ -21,6 +21,7 @@ namespace ImageHunter.Services
             var response = await client.SendAsync(request);
 
             var responseString = await response.Content.ReadAsStringAsync();
+            Console.WriteLine(responseString);
             return JsonSerializer.Deserialize<VectorizedResponse>(responseString);
         }
 

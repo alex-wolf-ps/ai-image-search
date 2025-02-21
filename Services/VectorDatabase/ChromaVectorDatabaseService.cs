@@ -7,12 +7,14 @@ using System.ComponentModel;
 
 namespace ImageHunter.Services.VectorDatabase
 {
-    public class VectorDatabaseService(IWebHostEnvironment env, ChromaClient chromaClient, ChromaCollectionClient chromaCollection) : IVectorDatabaseService
+    public class VectorDatabaseService(
+        IWebHostEnvironment env,
+        IHttpClientFactory httpClientFactory) : IVectorDatabaseService
     {
-        QdrantClient qClient = new QdrantClient("localhost");
-
         public async Task SaveImagestoDb(List<VectorizedImage> images)
         {
+            var chromaCollection = await GetChromaCollectionClient();
+
             List<string> imageIds = new();
             List<ReadOnlyMemory<float>> imageVectors = new();
             List<Dictionary<string,object>> imageMetadata = new();
@@ -24,11 +26,13 @@ namespace ImageHunter.Services.VectorDatabase
                 imageMetadata.Add(new Dictionary<string, object> { ["Name"] = image.FileName });
             }
 
-            await chromaCollection.Add(imageIds, imageVectors, imageMetadata);
+            await chromaCollection.Upsert(imageIds, imageVectors, imageMetadata);
         }
 
         public async Task<List<VectorizedImage>> GetAllImages()
         {
+            var chromaCollection = await GetChromaCollectionClient();
+
             List<VectorizedImage> images = new();
 
             var collection = await chromaCollection.Get();
@@ -45,6 +49,8 @@ namespace ImageHunter.Services.VectorDatabase
 
         public async Task<List<VectorizedImage>> SearchImages(float[] vector, int limit)
         {
+            var chromaCollection = await GetChromaCollectionClient();
+            
             List<ReadOnlyMemory<float>> imageVectors = [
                 vector
             ];
@@ -73,12 +79,33 @@ namespace ImageHunter.Services.VectorDatabase
         {
             try
             {
-                await chromaClient.GetOrCreateCollection("images");
+                var httpClient = httpClientFactory.CreateClient();
+                var configOptions = new ChromaConfigurationOptions(uri: "http://localhost:8000/api/v1/");
+                
+                var chromaClient = new ChromaClient(configOptions, httpClient);
+                var collection = await chromaClient.GetOrCreateCollection("images", metadata: new Dictionary<string, object>
+                {
+                    { "hnsw:space", "cosine" }
+                });
             }
             catch (Exception e)
             {
                 // already exists
             }
+        }
+
+        private async Task<ChromaCollectionClient> GetChromaCollectionClient()
+        {
+            var httpClient = httpClientFactory.CreateClient();
+            var configOptions = new ChromaConfigurationOptions(uri: "http://localhost:8000/api/v1/");
+            
+            var chromaClient = new ChromaClient(configOptions, httpClient);
+            var collectionClient = await chromaClient.GetOrCreateCollection("images", metadata: new Dictionary<string, object>
+            {
+                { "hnsw:space", "cosine" }
+            });
+            
+            return new ChromaCollectionClient(collectionClient, configOptions, httpClient);
         }
     }
 }
