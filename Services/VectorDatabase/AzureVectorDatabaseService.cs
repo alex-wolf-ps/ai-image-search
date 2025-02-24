@@ -48,7 +48,8 @@ namespace ImageHunter.Services.VectorDatabase
             using (SqlConnection connection = new SqlConnection(connStr))
             { 
                 string sql = @$"SELECT * from [dbo].[images]";
-                SqlCommand command = new SqlCommand(sql, connection); 
+                SqlCommand command = new SqlCommand(sql, connection);
+                
                 connection.Open();
                 using (SqlDataReader reader = await command.ExecuteReaderAsync())
                 {
@@ -84,10 +85,13 @@ namespace ImageHunter.Services.VectorDatabase
 
             using (SqlConnection connection = new SqlConnection(connStr))
             { 
-                string sql = @$"SELECT TOP({limit}) id, name, VECTOR_DISTANCE('cosine', CAST(@Embedding AS Vector(1024)), vectors) AS Distance from [dbo].[images] ORDER BY Distance";
-                Console.WriteLine(sql);
+                string sql = @$"SELECT TOP({limit}) id, name, 
+                VECTOR_DISTANCE('cosine', CAST(@Embedding AS Vector(1024)), vectors) 
+                AS Distance from [dbo].[images] ORDER BY Distance";
+
                 SqlCommand command = new SqlCommand(sql, connection);
                 command.Parameters.AddWithValue("@Embedding", JsonSerializer.Serialize(vector));
+
                 connection.Open();
                 using (SqlDataReader reader = await command.ExecuteReaderAsync())
                 {
